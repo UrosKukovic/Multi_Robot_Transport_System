@@ -1,2 +1,6 @@
 /instructions
 /practice
+build/
+install/
+log/
+.vscode/
