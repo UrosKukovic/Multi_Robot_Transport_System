@@ -13,6 +13,9 @@ def generate_launch_description():
     warehouse_map = os.path.join(
         get_package_share_directory('mrts_bringup'), 'maps', 'warehouse.yaml'
     )
+    params_yaml = os.path.join(
+        get_package_share_directory('mrts_bringup'), 'config', 'nav2_params.yaml'
+    )
     return LaunchDescription([
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(tb3_sim_launch),
@@ -20,6 +23,7 @@ def generate_launch_description():
                 'slam': 'False',
                 'map': warehouse_map,
                 'headless': 'False',
+                'params_file': params_yaml,
             }.items(),
         ),
     ])
