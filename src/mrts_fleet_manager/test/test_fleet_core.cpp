@@ -197,3 +197,26 @@ TEST(AssignNearestIdle, AllUnreachableReturnsNullopt)
   // return is nullopt -> no idle robots were assigned --> both unreachable
   ASSERT_FALSE(id.has_value());
 }
+
+TEST(IsTransitionLegal, TransitionLegal)
+{
+  auto is_legal_Idle_Moving = mrts::is_legal_transition(mrts::RobotState::Idle, mrts::RobotState::Moving);
+  auto is_legal_Moving_Fault = mrts::is_legal_transition(mrts::RobotState::Moving, mrts::RobotState::Fault);
+
+  ASSERT_EQ(is_legal_Idle_Moving, true);
+  ASSERT_EQ(is_legal_Moving_Fault, true);
+}
+
+TEST(IsTransitionLegal, TransitionIllegalLoadingUnloading)
+{
+  auto is_legal = mrts::is_legal_transition(mrts::RobotState::Loading, mrts::RobotState::Unloading);
+
+  ASSERT_FALSE(is_legal);
+}
+
+TEST(IsTransitionLegal, TransitionIllegalFaultMoving)
+{
+  auto is_legal = mrts::is_legal_transition(mrts::RobotState::Fault, mrts::RobotState::Moving);
+
+  ASSERT_FALSE(is_legal);
+}

@@ -38,4 +38,28 @@ namespace mrts
         double dy = from.y - to.y;
         return (dx * dx + dy * dy);
     }
+
+    bool is_legal_transition(RobotState current_state, RobotState new_state)
+    {
+        switch (current_state)
+        {   
+        case RobotState::Idle:
+            return new_state == RobotState::Moving;
+
+        case RobotState::Moving:
+            return (new_state == RobotState::Loading) || (new_state == RobotState::Unloading) || (new_state == RobotState::Fault);
+        
+        case RobotState::Loading:
+            return new_state == RobotState::Moving;
+        
+        case RobotState::Unloading:
+            return new_state == RobotState::Idle;
+
+        case RobotState::Fault:
+            return new_state == RobotState::Idle;
+
+        default:
+            return false;
+        }
+    }
 }

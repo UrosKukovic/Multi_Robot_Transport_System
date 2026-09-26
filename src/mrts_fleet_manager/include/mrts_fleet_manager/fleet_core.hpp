@@ -21,11 +21,18 @@ namespace mrts
         Fault
     };
 
+    enum class Leg
+    {
+        HeadingToPickup,
+        HeadingToDropoff
+    };
+
     struct Robot
     {
         std::string id;
         RobotState state;
         Pose2D pose;
+        Leg leg{Leg::HeadingToPickup};
     };
 
     struct Task
@@ -39,4 +46,5 @@ namespace mrts
     std::optional<std::string> assign_nearest_idle(const std::vector<Robot>& robots, const Task& task,
         std::function<std::optional<double>(const Pose2D&, const Pose2D&)> cost);
     double euclidean_sq(const Pose2D& from, const Pose2D& to);
+    bool is_legal_transition(RobotState current_state, RobotState new_state);
 }
