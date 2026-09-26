@@ -202,9 +202,11 @@ TEST(IsTransitionLegal, TransitionLegal)
 {
   auto is_legal_Idle_Moving = mrts::is_legal_transition(mrts::RobotState::Idle, mrts::RobotState::Moving);
   auto is_legal_Moving_Fault = mrts::is_legal_transition(mrts::RobotState::Moving, mrts::RobotState::Fault);
+  auto is_legal_Moving_Idle = mrts::is_legal_transition(mrts::RobotState::Moving, mrts::RobotState::Idle);  
 
   EXPECT_TRUE(is_legal_Idle_Moving);
   EXPECT_TRUE(is_legal_Moving_Fault);
+  EXPECT_TRUE(is_legal_Moving_Idle);
 }
 
 TEST(IsTransitionLegal, TransitionIllegalLoadingUnloading)

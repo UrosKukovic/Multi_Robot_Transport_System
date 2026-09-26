@@ -47,4 +47,5 @@ namespace mrts
         std::function<std::optional<double>(const Pose2D&, const Pose2D&)> cost);
     double euclidean_sq(const Pose2D& from, const Pose2D& to);
     bool is_legal_transition(RobotState current_state, RobotState new_state);
+    const char* to_string(mrts::RobotState);
 }

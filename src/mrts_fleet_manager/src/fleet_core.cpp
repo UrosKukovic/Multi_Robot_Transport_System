@@ -47,7 +47,7 @@ namespace mrts
             return new_state == RobotState::Moving;
 
         case RobotState::Moving:
-            return (new_state == RobotState::Loading) || (new_state == RobotState::Unloading) || (new_state == RobotState::Fault);
+            return (new_state == RobotState::Loading) || (new_state == RobotState::Unloading) || (new_state == RobotState::Fault) || (new_state == RobotState::Idle);
         
         case RobotState::Loading:
             return new_state == RobotState::Moving;
@@ -61,5 +61,28 @@ namespace mrts
         default:
             return false;
         }
+    }
+
+    const char* to_string(mrts::RobotState s)
+    {
+        switch (s)
+        {
+        case RobotState::Fault:
+            return "Fault";
+
+        case RobotState::Idle:
+            return "Idle";
+
+        case RobotState::Loading:
+            return "Loading";
+
+        case RobotState::Moving:
+            return "Moving";
+
+        case RobotState::Unloading:
+            return "Unloading";
+        }
+
+        return "Unknown";
     }
 }
