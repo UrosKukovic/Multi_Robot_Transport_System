@@ -142,3 +142,58 @@ TEST(AssignNearestIdle, SkipEmptyFleet)
   // id will be empty -> empty fleet
   ASSERT_FALSE(id.has_value());
 }
+
+TEST(AssignNearestIdle, SkipUnreachableNearer)
+{
+  std::vector<mrts::Robot> robots
+  {
+    {"r1", mrts::RobotState::Idle, {5.0, 0.0}},
+    {"r2", mrts::RobotState::Idle, {1.0, 0.0}}
+  };
+  
+  mrts::Task task
+  {
+    1,
+    {0.0, 0.0},
+    {10.0, 10.0}
+  };
+
+  auto lmbd = [](const mrts::Pose2D& from, const mrts::Pose2D& to) -> std::optional<double>
+  {
+    if (from.x == 1.0) return std::nullopt;
+
+    auto cost_val = mrts::euclidean_sq(from, to);
+    return cost_val;
+  };
+
+  auto id = mrts::assign_nearest_idle(robots, task, lmbd);
+  ASSERT_TRUE(id.has_value());
+  // skip r2 since it is "unreachable" even if closer -> returns nullopt
+  EXPECT_EQ(*id, "r1");
+}
+
+TEST(AssignNearestIdle, AllUnreachableReturnsNullopt)
+{
+  std::vector<mrts::Robot> robots
+  {
+    {"r1", mrts::RobotState::Idle, {5.0, 0.0}},
+    {"r2", mrts::RobotState::Idle, {1.0, 0.0}}
+  };
+  
+  mrts::Task task
+  {
+    1,
+    {0.0, 0.0},
+    {10.0, 10.0}
+  };
+
+  auto lmbd = [](const mrts::Pose2D&, const mrts::Pose2D&) -> std::optional<double>
+  {
+    // both Idle robots are unreachable
+    return std::nullopt;
+  };
+
+  auto id = mrts::assign_nearest_idle(robots, task, lmbd);
+  // return is nullopt -> no idle robots were assigned --> both unreachable
+  ASSERT_FALSE(id.has_value());
+}
