@@ -203,17 +203,21 @@ TEST(IsTransitionLegal, TransitionLegal)
   auto is_legal_Idle_Moving = mrts::is_legal_transition(mrts::RobotState::Idle, mrts::RobotState::Moving);
   auto is_legal_Moving_Fault = mrts::is_legal_transition(mrts::RobotState::Moving, mrts::RobotState::Fault);
   auto is_legal_Moving_Idle = mrts::is_legal_transition(mrts::RobotState::Moving, mrts::RobotState::Idle);  
+  auto is_legal_Loading_Fault = mrts::is_legal_transition(mrts::RobotState::Loading, mrts::RobotState::Fault);  
 
   EXPECT_TRUE(is_legal_Idle_Moving);
   EXPECT_TRUE(is_legal_Moving_Fault);
   EXPECT_TRUE(is_legal_Moving_Idle);
+  EXPECT_TRUE(is_legal_Loading_Fault);
 }
 
 TEST(IsTransitionLegal, TransitionIllegalLoadingUnloading)
 {
-  auto is_legal = mrts::is_legal_transition(mrts::RobotState::Loading, mrts::RobotState::Unloading);
+  auto is_legal_Loading_Unloading = mrts::is_legal_transition(mrts::RobotState::Loading, mrts::RobotState::Unloading);
+  auto is_legal_Idle_Idle = mrts::is_legal_transition(mrts::RobotState::Idle, mrts::RobotState::Idle);
 
-  ASSERT_FALSE(is_legal);
+  EXPECT_FALSE(is_legal_Loading_Unloading);
+  EXPECT_FALSE(is_legal_Idle_Idle);
 }
 
 TEST(IsTransitionLegal, TransitionIllegalFaultMoving)

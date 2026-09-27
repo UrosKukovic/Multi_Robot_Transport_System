@@ -44,13 +44,13 @@ namespace mrts
         switch (current_state)
         {   
         case RobotState::Idle:
-            return new_state == RobotState::Moving;
+            return (new_state == RobotState::Moving);
 
         case RobotState::Moving:
             return (new_state == RobotState::Loading) || (new_state == RobotState::Unloading) || (new_state == RobotState::Fault) || (new_state == RobotState::Idle);
         
         case RobotState::Loading:
-            return new_state == RobotState::Moving;
+            return (new_state == RobotState::Moving) || (new_state == RobotState::Fault);
         
         case RobotState::Unloading:
             return new_state == RobotState::Idle;

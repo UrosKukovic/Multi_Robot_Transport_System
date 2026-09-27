@@ -2,6 +2,7 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <nav2_msgs/action/navigate_to_pose.hpp>
 #include <vector>
+#include <map>
 
 #include "mrts_fleet_manager/fleet_core.hpp"
 
@@ -26,8 +27,6 @@ private:
             RCLCPP_INFO(get_logger(), "Nav2 not available");
             return;
         }
-
-        RCLCPP_INFO(get_logger(), "Nav2 ready");
 
         auto best_id = mrts::assign_nearest_idle(robots_, task_, mrts::euclidean_sq);
 
@@ -55,96 +54,49 @@ private:
             return;
         }
 
-        auto goal = make_goal(task_.pickup);
+        send_nav_goal(robot->id, task_.pickup);
+    }
 
-        rclcpp_action::Client<NavigateToPose>::SendGoalOptions options;
+    void dropoff(const std::string id)
+    {
+        // using .at() since it will throw std::out_of_range if the key is missing, since map inserts nullptr by default for shared_ptr,
+        // we could call cancel() on a nullptr.
+        work_timers_.at(id)->cancel();
 
-        options.goal_response_callback = [this, id = robot->id](GoalHandle::SharedPtr gh)
+        auto robot = find_robot(id);
+
+        if (robot == nullptr)
         {
-            if (gh == nullptr)
-            {
-                RCLCPP_INFO(get_logger(), "Goal rejected");
+            RCLCPP_ERROR(get_logger(), "No found robots for dropoff!");
+            return;
+        }
 
-                auto robot = find_robot(id);
-                if (robot == nullptr)
-                    return;
-
-                if (robot->leg == mrts::Leg::HeadingToDropoff)
-                {
-                    // The robot is loaded. Rejected means Moving -> Fault because it was rejected on its way to dropoff
-                    set_state(id, mrts::RobotState::Fault);
-                }
-                else
-                {
-                    // Robot is not loaded - task was rejected on its way to pickup (Moving -> Idle)
-                    set_state(id, mrts::RobotState::Idle);
-                }
-            }
-            else
-                RCLCPP_INFO(get_logger(), "Goal accepted");
-        };
-
-        options.result_callback = [this, id = robot->id](const GoalHandle::WrappedResult& result)
+        if (!client_->wait_for_action_server(std::chrono::milliseconds(500)))
         {
-            switch (result.code)
+            RCLCPP_INFO(get_logger(), "Nav2 not available");
+
+            // Loading->Fault
+            bool state_set = set_state(robot->id, mrts::RobotState::Fault);
+
+            if (!state_set)
             {
-            case rclcpp_action::ResultCode::SUCCEEDED:
-            {
-                RCLCPP_INFO(get_logger(), "SUCCEEDED");
-                auto robot = find_robot(id);
-                if (robot == nullptr)
-                    break;
-
-                if (robot->leg == mrts::Leg::HeadingToPickup)
-                {
-                    set_state(id, mrts::RobotState::Loading);
-                }
-
-                else
-                {
-                    set_state(id, mrts::RobotState::Unloading);
-                }
-                break;
+                RCLCPP_ERROR(get_logger(), "State set unsuccessful!");
             }
-            case rclcpp_action::ResultCode::ABORTED:
-            {
-                RCLCPP_INFO(get_logger(), "ABORTED");
-                set_state(id, mrts::RobotState::Fault);
-                break;
-            }
-            case rclcpp_action::ResultCode::CANCELED:
-            {
-                RCLCPP_INFO(get_logger(), "CANCELED");
+            
+            return;
+        }
 
-                auto robot = find_robot(id);
-                if (robot == nullptr)
-                    break;
+        robot->leg = mrts::Leg::HeadingToDropoff;
 
-                if (robot->leg == mrts::Leg::HeadingToDropoff)
-                {
-                    // The robot is loaded. Cancelled means Moving -> Fault
-                    set_state(id, mrts::RobotState::Fault);
-                }
-                else
-                {
-                    // Robot is not loaded - task was cancelled on its way to pickup (Moving -> Idle)
-                    set_state(id, mrts::RobotState::Idle);
-                }
-                break;
-            }
-            default:
-                RCLCPP_INFO(get_logger(), "INVALID");
-                break;
-            }
+        bool state_set = set_state(robot->id, mrts::RobotState::Moving);
 
-        };
-
-        options.feedback_callback = [this](GoalHandle::SharedPtr, const std::shared_ptr<const NavigateToPose::Feedback> fb)
+        if (!state_set)
         {
-            RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500, "distance remaining: %.4f", fb->distance_remaining);
-        };
+            RCLCPP_ERROR(get_logger(), "State set unsuccessful, a goal wasn't sent.");
+            return;
+        }
 
-        client_->async_send_goal(goal, options);
+        send_nav_goal(robot->id, task_.dropoff);
     }
 
     mrts::Robot* find_robot(const std::string& id)
@@ -197,7 +149,117 @@ private:
         return goal;
     }
 
+    void send_nav_goal(const std::string& id, const mrts::Pose2D& target)
+    {
+        auto goal = make_goal(target);
+
+        rclcpp_action::Client<NavigateToPose>::SendGoalOptions options;
+
+        options.goal_response_callback = [this, id](GoalHandle::SharedPtr gh)
+        {
+            if (gh == nullptr)
+            {
+                RCLCPP_INFO(get_logger(), "Goal rejected");
+
+                auto robot = find_robot(id);
+                if (robot == nullptr)
+                    return;
+
+                if (robot->leg == mrts::Leg::HeadingToDropoff)
+                {
+                    // The robot is loaded. Rejected means Moving -> Fault because it was rejected on its way to dropoff
+                    set_state(id, mrts::RobotState::Fault);
+                }
+                else
+                {
+                    // Robot is not loaded - task was rejected on its way to pickup (Moving -> Idle)
+                    set_state(id, mrts::RobotState::Idle);
+                }
+            }
+            else
+                RCLCPP_INFO(get_logger(), "Goal accepted");
+        };
+
+        options.result_callback = [this, id](const GoalHandle::WrappedResult& result)
+        {
+            switch (result.code)
+            {
+            case rclcpp_action::ResultCode::SUCCEEDED:
+            {
+                RCLCPP_INFO(get_logger(), "SUCCEEDED");
+                auto robot = find_robot(id);
+                if (robot == nullptr)
+                    break;
+
+                if (robot->leg == mrts::Leg::HeadingToPickup)
+                {
+                    set_state(id, mrts::RobotState::Loading);
+                    work_timers_[id] = create_wall_timer(std::chrono::seconds(3), [this, id](){ dropoff(id); });
+                }
+
+                else
+                {
+                    set_state(id, mrts::RobotState::Unloading);
+                    // I'm not sure if i can use the same timer.
+                    work_timers_[id] = create_wall_timer(std::chrono::seconds(3), [this, id](){
+                        work_timers_.at(id)->cancel();
+                        auto robot = find_robot(id);
+
+                        if (robot == nullptr)
+                        {
+                            RCLCPP_ERROR(get_logger(), "No found robots!");
+                            return;
+                        }
+
+                        set_state(id, mrts::RobotState::Idle);
+                        robot->leg = mrts::Leg::HeadingToPickup;
+                    });
+                }
+                break;
+            }
+            case rclcpp_action::ResultCode::ABORTED:
+            {
+                RCLCPP_INFO(get_logger(), "ABORTED");
+                set_state(id, mrts::RobotState::Fault);
+                break;
+            }
+            case rclcpp_action::ResultCode::CANCELED:
+            {
+                RCLCPP_INFO(get_logger(), "CANCELED");
+
+                auto robot = find_robot(id);
+                if (robot == nullptr)
+                    break;
+
+                if (robot->leg == mrts::Leg::HeadingToDropoff)
+                {
+                    // The robot is loaded. Cancelled means Moving -> Fault
+                    set_state(id, mrts::RobotState::Fault);
+                }
+                else
+                {
+                    // Robot is not loaded - task was cancelled on its way to pickup (Moving -> Idle)
+                    set_state(id, mrts::RobotState::Idle);
+                }
+                break;
+            }
+            default:
+                RCLCPP_INFO(get_logger(), "INVALID");
+                break;
+            }
+
+        };
+
+        options.feedback_callback = [this](GoalHandle::SharedPtr, const std::shared_ptr<const NavigateToPose::Feedback> fb)
+        {
+            RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500, "distance remaining: %.4f", fb->distance_remaining);
+        };
+
+        client_->async_send_goal(goal, options);
+    }
+
     rclcpp::TimerBase::SharedPtr timer_;
+    std::map<std::string, rclcpp::TimerBase::SharedPtr> work_timers_;
     rclcpp_action::Client<NavigateToPose>::SharedPtr client_;
     std::vector<mrts::Robot> robots_
     {
@@ -206,8 +268,8 @@ private:
     mrts::Task task_
     {
         1,
-        // {2.15, 1.577},
-        {2.2, 3.3},
+        {2.0, 1.0},
+        // {2.2, 3.3},
         {3.5, -1.0}
     };
 };
