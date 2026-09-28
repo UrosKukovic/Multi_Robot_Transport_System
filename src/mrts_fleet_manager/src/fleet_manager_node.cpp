@@ -3,6 +3,7 @@
 #include <nav2_msgs/action/navigate_to_pose.hpp>
 #include <vector>
 #include <map>
+#include <deque>
 
 #include "mrts_fleet_manager/fleet_core.hpp"
 
@@ -14,21 +15,24 @@ class FleetManagerNode : public rclcpp::Node
 public:
     FleetManagerNode() : Node("fleet_manager")
     {
-        client_ = rclcpp_action::create_client<NavigateToPose>(this, "navigate_to_pose");
+        for (auto& r : robots_)
+        {
+            clients_[r.id] = rclcpp_action::create_client<NavigateToPose>(this, "/"+ r.id + "/navigate_to_pose");
+        }
+
         timer_ = create_wall_timer(std::chrono::seconds(1), [this]() { dispatch(); });
     }
 
 private:
     void dispatch()
     {
-        timer_->cancel();
-        if (!client_->wait_for_action_server(std::chrono::milliseconds(500)))
-        {
-            RCLCPP_INFO(get_logger(), "Nav2 not available");
+        // check if any tasks are pending
+        if (pending_tasks_.empty())
             return;
-        }
 
-        auto best_id = mrts::assign_nearest_idle(robots_, task_, mrts::euclidean_sq);
+        const auto& task = pending_tasks_.front();
+
+        auto best_id = mrts::assign_nearest_idle(robots_, task, mrts::euclidean_sq);
 
         if (best_id == std::nullopt)
         {
@@ -43,6 +47,12 @@ private:
             RCLCPP_ERROR(get_logger(), "No found robots!");
             return;
         }
+
+        if (!clients_.at(*best_id)->action_server_is_ready())
+        {
+            RCLCPP_INFO(get_logger(), "Nav2 not available");
+            return;
+        }
         
         robot->leg = mrts::Leg::HeadingToPickup;
 
@@ -54,7 +64,10 @@ private:
             return;
         }
 
-        send_nav_goal(robot->id, task_.pickup);
+        active_tasks_[robot->id] = task;
+        pending_tasks_.pop_front();
+
+        send_nav_goal(robot->id, active_tasks_[robot->id].pickup);
     }
 
     void dropoff(const std::string id)
@@ -62,7 +75,7 @@ private:
         // using .at() since it will throw std::out_of_range if the key is missing, since map inserts nullptr by default for shared_ptr,
         // we could call cancel() on a nullptr.
         work_timers_.at(id)->cancel();
-
+     
         auto robot = find_robot(id);
 
         if (robot == nullptr)
@@ -71,7 +84,7 @@ private:
             return;
         }
 
-        if (!client_->wait_for_action_server(std::chrono::milliseconds(500)))
+        if (!clients_.at(id)->wait_for_action_server(std::chrono::milliseconds(500)))
         {
             RCLCPP_INFO(get_logger(), "Nav2 not available");
 
@@ -96,7 +109,7 @@ private:
             return;
         }
 
-        send_nav_goal(robot->id, task_.dropoff);
+        send_nav_goal(robot->id, active_tasks_.at(id).dropoff);
     }
 
     mrts::Robot* find_robot(const std::string& id)
@@ -159,7 +172,7 @@ private:
         {
             if (gh == nullptr)
             {
-                RCLCPP_INFO(get_logger(), "Goal rejected");
+                RCLCPP_INFO(get_logger(), "%s: Goal rejected", id.c_str());
 
                 auto robot = find_robot(id);
                 if (robot == nullptr)
@@ -174,10 +187,12 @@ private:
                 {
                     // Robot is not loaded - task was rejected on its way to pickup (Moving -> Idle)
                     set_state(id, mrts::RobotState::Idle);
+                    pending_tasks_.push_back(active_tasks_[id]);
+                    active_tasks_.erase(id);
                 }
             }
             else
-                RCLCPP_INFO(get_logger(), "Goal accepted");
+                RCLCPP_INFO(get_logger(), "%s: Goal accepted", id.c_str());
         };
 
         options.result_callback = [this, id](const GoalHandle::WrappedResult& result)
@@ -186,7 +201,7 @@ private:
             {
             case rclcpp_action::ResultCode::SUCCEEDED:
             {
-                RCLCPP_INFO(get_logger(), "SUCCEEDED");
+                RCLCPP_INFO(get_logger(), "%s: SUCCEEDED", id.c_str());
                 auto robot = find_robot(id);
                 if (robot == nullptr)
                     break;
@@ -200,7 +215,6 @@ private:
                 else
                 {
                     set_state(id, mrts::RobotState::Unloading);
-                    // I'm not sure if i can use the same timer.
                     work_timers_[id] = create_wall_timer(std::chrono::seconds(3), [this, id](){
                         work_timers_.at(id)->cancel();
                         auto robot = find_robot(id);
@@ -212,6 +226,9 @@ private:
                         }
 
                         set_state(id, mrts::RobotState::Idle);
+                        robot->pose = active_tasks_.at(id).dropoff;
+                        RCLCPP_INFO(get_logger(), "%s: Idle at (%.2f, %.2f)", id.c_str(), robot->pose.x, robot->pose.y);
+                        active_tasks_.erase(id);
                         robot->leg = mrts::Leg::HeadingToPickup;
                     });
                 }
@@ -219,13 +236,13 @@ private:
             }
             case rclcpp_action::ResultCode::ABORTED:
             {
-                RCLCPP_INFO(get_logger(), "ABORTED");
+                RCLCPP_INFO(get_logger(), "%s: ABORTED", id.c_str());
                 set_state(id, mrts::RobotState::Fault);
                 break;
             }
             case rclcpp_action::ResultCode::CANCELED:
             {
-                RCLCPP_INFO(get_logger(), "CANCELED");
+                RCLCPP_INFO(get_logger(), "%s: CANCELED", id.c_str());
 
                 auto robot = find_robot(id);
                 if (robot == nullptr)
@@ -240,6 +257,8 @@ private:
                 {
                     // Robot is not loaded - task was cancelled on its way to pickup (Moving -> Idle)
                     set_state(id, mrts::RobotState::Idle);
+                    pending_tasks_.push_back(active_tasks_[id]);
+                    active_tasks_.erase(id);
                 }
                 break;
             }
@@ -250,27 +269,27 @@ private:
 
         };
 
-        options.feedback_callback = [this](GoalHandle::SharedPtr, const std::shared_ptr<const NavigateToPose::Feedback> fb)
+        options.feedback_callback = [this, id](GoalHandle::SharedPtr, const std::shared_ptr<const NavigateToPose::Feedback> fb)
         {
-            RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500, "distance remaining: %.4f", fb->distance_remaining);
+            RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500, "%s: distance remaining: %.4f", id.c_str(), fb->distance_remaining);
         };
 
-        client_->async_send_goal(goal, options);
+        clients_.at(id)->async_send_goal(goal, options);
     }
 
     rclcpp::TimerBase::SharedPtr timer_;
     std::map<std::string, rclcpp::TimerBase::SharedPtr> work_timers_;
-    rclcpp_action::Client<NavigateToPose>::SharedPtr client_;
+    std::map<std::string, rclcpp_action::Client<NavigateToPose>::SharedPtr> clients_;
+    std::deque<mrts::Task> pending_tasks_
+    {
+        {1, {2.0, 1.0}, {3.81, -0.24}},
+        {2, {1.34, 2.53}, {2.61, -1.52}},
+    };
+    std::map<std::string, mrts::Task> active_tasks_;
     std::vector<mrts::Robot> robots_
     {
-        {"robot1", mrts::RobotState::Idle, {0.0, 0.0}}
-    };
-    mrts::Task task_
-    {
-        1,
-        {2.0, 1.0},
-        // {2.2, 3.3},
-        {3.5, -1.0}
+        {"robot1", mrts::RobotState::Idle, {0.0, 0.0}},
+        {"robot2", mrts::RobotState::Idle, {1.5, 0.0}}
     };
 };
 
