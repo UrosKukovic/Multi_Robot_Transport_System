@@ -1,6 +1,8 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <nav2_msgs/action/navigate_to_pose.hpp>
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+#include <mrts_interfaces/srv/submit_task.hpp>
 #include <vector>
 #include <map>
 #include <deque>
@@ -8,6 +10,8 @@
 #include "mrts_fleet_manager/fleet_core.hpp"
 
 using NavigateToPose = nav2_msgs::action::NavigateToPose;
+using PoseMsg = geometry_msgs::msg::PoseWithCovarianceStamped;
+using SubmitTask = mrts_interfaces::srv::SubmitTask;
 using GoalHandle = rclcpp_action::ClientGoalHandle<NavigateToPose>;
 
 class FleetManagerNode : public rclcpp::Node
@@ -18,8 +22,56 @@ public:
         for (auto& r : robots_)
         {
             clients_[r.id] = rclcpp_action::create_client<NavigateToPose>(this, "/"+ r.id + "/navigate_to_pose");
-        }
+            // From the tutorial page
+            pose_subs_[r.id] = create_subscription<PoseMsg>(
+                "/" + r.id + "/amcl_pose",
+                rclcpp::QoS(1).transient_local().reliable(),
+                [this, id = r.id](const PoseMsg::ConstSharedPtr msg)
+                {
+                    auto robot = find_robot(id);
 
+                    if (robot == nullptr)
+                    {
+                        RCLCPP_ERROR(get_logger(), "%s: amcl_pose for unknown robot", id.c_str());
+                        return;
+                    }
+
+                    robot->pose.x = msg->pose.pose.position.x;
+                    robot->pose.y = msg->pose.pose.position.y;
+                });
+        }
+        submit_srv_ = create_service<SubmitTask>(
+            "~/submit_task",
+            [this](const std::shared_ptr<SubmitTask::Request> req,
+                    std::shared_ptr<SubmitTask::Response> res)
+            {
+                const mrts::Pose2D pickup{req->pickup_x, req->pickup_y};
+                const mrts::Pose2D dropoff{req->dropoff_x, req->dropoff_y};
+                constexpr double min_dist = 0.1;  // metres; closer than this is the same spot for Nav2
+
+                if (mrts::euclidean_sq(pickup, dropoff) < min_dist * min_dist)
+                {
+                    res->accepted = false;
+                    res->message = "Pickup and dropoff are closer than 0.1 m. Pickup: (" +
+                        std::to_string(req->pickup_x) + ", " + std::to_string(req->pickup_y) +
+                        "); Dropoff: (" +
+                        std::to_string(req->dropoff_x) + ", " + std::to_string(req->dropoff_y) + ")";
+                    RCLCPP_WARN(get_logger(), "%s", res->message.c_str());
+                    return;
+                }
+
+                mrts::Task task;
+                task.id = next_task_id_;
+                task.pickup = pickup;
+                task.dropoff = dropoff;
+                pending_tasks_.push_back(task);
+                next_task_id_++;
+
+                res->accepted = true;
+                res->task_id = task.id;
+                res->message = "Queued as task " + std::to_string(task.id) + ", " + std::to_string(pending_tasks_.size()) + " pending";
+                RCLCPP_INFO(get_logger(), "%s", res->message.c_str());
+            });
         timer_ = create_wall_timer(std::chrono::seconds(1), [this]() { dispatch(); });
     }
 
@@ -80,7 +132,7 @@ private:
 
         if (robot == nullptr)
         {
-            RCLCPP_ERROR(get_logger(), "No found robots for dropoff!");
+            RCLCPP_ERROR(get_logger(), "%s: amcl_pose for unknown robot", id.c_str());
             return;
         }
 
@@ -226,7 +278,6 @@ private:
                         }
 
                         set_state(id, mrts::RobotState::Idle);
-                        robot->pose = active_tasks_.at(id).dropoff;
                         RCLCPP_INFO(get_logger(), "%s: Idle at (%.2f, %.2f)", id.c_str(), robot->pose.x, robot->pose.y);
                         active_tasks_.erase(id);
                         robot->leg = mrts::Leg::HeadingToPickup;
@@ -280,11 +331,10 @@ private:
     rclcpp::TimerBase::SharedPtr timer_;
     std::map<std::string, rclcpp::TimerBase::SharedPtr> work_timers_;
     std::map<std::string, rclcpp_action::Client<NavigateToPose>::SharedPtr> clients_;
-    std::deque<mrts::Task> pending_tasks_
-    {
-        {1, {2.0, 1.0}, {3.81, -0.24}},
-        {2, {1.34, 2.53}, {2.61, -1.52}},
-    };
+    std::map<std::string, rclcpp::Subscription<PoseMsg>::SharedPtr> pose_subs_;
+    rclcpp::Service<SubmitTask>::SharedPtr submit_srv_;
+    int next_task_id_{1};
+    std::deque<mrts::Task> pending_tasks_;
     std::map<std::string, mrts::Task> active_tasks_;
     std::vector<mrts::Robot> robots_
     {

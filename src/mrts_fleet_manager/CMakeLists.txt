@@ -10,6 +10,7 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(nav2_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(mrts_interfaces REQUIRED)
 
 # Plain C++ core: no rclcpp, so it is unit-testable without a running ROS graph.
 add_library(fleet_core src/fleet_core.cpp)
@@ -24,7 +25,8 @@ target_link_libraries(fleet_manager_node
   rclcpp::rclcpp
   rclcpp_action::rclcpp_action
   ${nav2_msgs_TARGETS}
-  ${geometry_msgs_TARGETS})
+  ${geometry_msgs_TARGETS}
+  ${mrts_interfaces_TARGETS})
 
 install(TARGETS fleet_core
   ARCHIVE DESTINATION lib

@@ -1,0 +1,10 @@
+# Request: a transport task in the map frame
+float64 pickup_x
+float64 pickup_y
+float64 dropoff_x
+float64 dropoff_y
+---
+# Response
+bool accepted
+int32 task_id
+string message
