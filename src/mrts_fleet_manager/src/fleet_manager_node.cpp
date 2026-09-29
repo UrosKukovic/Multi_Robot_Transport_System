@@ -3,6 +3,7 @@
 #include <nav2_msgs/action/navigate_to_pose.hpp>
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <mrts_interfaces/srv/submit_task.hpp>
+#include <nav2_msgs/action/compute_path_to_pose.hpp>
 #include <vector>
 #include <map>
 #include <deque>
@@ -12,6 +13,7 @@
 using NavigateToPose = nav2_msgs::action::NavigateToPose;
 using PoseMsg = geometry_msgs::msg::PoseWithCovarianceStamped;
 using SubmitTask = mrts_interfaces::srv::SubmitTask;
+using PlanResult = nav2_msgs::action::ComputePathToPose::Result;
 using GoalHandle = rclcpp_action::ClientGoalHandle<NavigateToPose>;
 
 class FleetManagerNode : public rclcpp::Node
@@ -194,14 +196,19 @@ private:
         }
         
         robot->state = new_state;
-        RCLCPP_INFO(get_logger(), "%s: %s -> %s", id.c_str(), mrts::to_string(old_state), mrts::to_string(new_state));
+        
+        if (new_state == mrts::RobotState::Fault)
+            RCLCPP_ERROR(get_logger(), "%s: %s -> %s", id.c_str(), mrts::to_string(old_state), mrts::to_string(new_state));        
+
+        else
+            RCLCPP_INFO(get_logger(), "%s: %s -> %s", id.c_str(), mrts::to_string(old_state), mrts::to_string(new_state));
+        
         return true;
     }
 
     NavigateToPose::Goal make_goal(const mrts::Pose2D& p)
     {
         // Notes for me so that I can understand things:
-        // If we want
         // since x = a_x * sin(theta/2), y = a_y * sin(theta/2), z = a_z * sin(theta/2), w = cos(theta/2)
         // if we want to keep rotation 0 about Z axis, we have to set x,y,z = 0 and w = 1.
         // goal.pose.pose.orientation.w is 1.0 as default
@@ -287,8 +294,25 @@ private:
             }
             case rclcpp_action::ResultCode::ABORTED:
             {
-                RCLCPP_INFO(get_logger(), "%s: ABORTED", id.c_str());
-                set_state(id, mrts::RobotState::Fault);
+                auto robot = find_robot(id);
+                if (robot == nullptr)
+                    break;
+
+                RCLCPP_WARN(get_logger(), "%s: ABORTED", id.c_str());
+                RCLCPP_WARN(get_logger(), "error_code: %d; error_msg: %s", result.result->error_code, result.result->error_msg.c_str());
+                
+                if ( ((result.result->error_code == PlanResult::GOAL_OUTSIDE_MAP) || 
+                    (result.result->error_code == PlanResult::GOAL_OCCUPIED)) &&
+                    robot->leg != mrts::Leg::HeadingToDropoff )
+                {
+                    set_state(id, mrts::RobotState::Idle);
+                    RCLCPP_ERROR(get_logger(), "task %d failed: %s", active_tasks_.at(id).id, result.result->error_msg.c_str());
+                    active_tasks_.erase(id);
+                }    
+
+                else
+                    set_state(id, mrts::RobotState::Fault);
+
                 break;
             }
             case rclcpp_action::ResultCode::CANCELED:
