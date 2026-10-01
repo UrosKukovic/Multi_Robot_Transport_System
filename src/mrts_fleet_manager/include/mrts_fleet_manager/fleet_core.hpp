@@ -37,7 +37,8 @@ namespace mrts
 
     struct Task
     {
-        int id;
+        int id{};
+        int failures{};
         Pose2D pickup;
         Pose2D dropoff;
     };

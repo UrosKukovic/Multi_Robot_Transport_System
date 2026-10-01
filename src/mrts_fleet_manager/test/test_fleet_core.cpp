@@ -2,6 +2,17 @@
 
 #include "mrts_fleet_manager/fleet_core.hpp"
 
+// Helpers
+mrts::Task make_task(int id, int failures, mrts::Pose2D pickup, mrts::Pose2D dropoff)
+{
+  return mrts::Task{
+    .id = id,
+    .failures = failures,
+    .pickup = pickup,
+    .dropoff = dropoff
+  };
+}
+
 TEST(AssignNearestIdle, PicksRobotOnPickup)
 {
   std::vector<mrts::Robot> robots
@@ -11,12 +22,7 @@ TEST(AssignNearestIdle, PicksRobotOnPickup)
     {"r3", mrts::RobotState::Idle, {1.0, 0.0}}
   };
   
-  mrts::Task task
-  {
-    1,
-    {0.0, 0.0},
-    {10.0, 10.0}
-  };
+  mrts::Task task = make_task(1, 0, {0.0, 0.0}, {10.0, 10.0});
 
   auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_sq);
   ASSERT_TRUE(id.has_value());
@@ -32,12 +38,7 @@ TEST(AssignNearestIdle, TieGoesToFirstInList)
     {"r2", mrts::RobotState::Idle, {5.0, 0.0}}
   };
   
-  mrts::Task task
-  {
-    1,
-    {0.0, 0.0},
-    {10.0, 10.0}
-  };
+  mrts::Task task = make_task(1, 0, {0.0, 0.0}, {10.0, 10.0});
 
   auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_sq);
   ASSERT_TRUE(id.has_value());
@@ -52,12 +53,7 @@ TEST(AssignNearestIdle, PicksNearerOfTwoIdle)
     {"r2", mrts::RobotState::Idle, {1.0, 0.0}}
   };
   
-  mrts::Task task
-  {
-    1,
-    {0.0, 0.0},
-    {10.0, 10.0}
-  };
+  mrts::Task task = make_task(1, 0, {0.0, 0.0}, {10.0, 10.0});
 
   auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_sq);
   ASSERT_TRUE(id.has_value());
@@ -72,12 +68,7 @@ TEST(AssignNearestIdle, SkipNearerMoving)
     {"r2", mrts::RobotState::Moving, {1.0, 0.0}}
   };
   
-  mrts::Task task
-  {
-    1,
-    {0.0, 0.0},
-    {10.0, 10.0}
-  };
+  mrts::Task task = make_task(1, 0, {0.0, 0.0}, {10.0, 10.0});
 
   auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_sq);
   ASSERT_TRUE(id.has_value());
@@ -93,12 +84,7 @@ TEST(AssignNearestIdle, SkipNearerFault)
     {"r2", mrts::RobotState::Fault, {1.0, 0.0}}
   };
   
-  mrts::Task task
-  {
-    1,
-    {0.0, 0.0},
-    {10.0, 10.0}
-  };
+  mrts::Task task = make_task(1, 0, {0.0, 0.0}, {10.0, 10.0});
 
   auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_sq);
   ASSERT_TRUE(id.has_value());
@@ -114,12 +100,7 @@ TEST(AssignNearestIdle, NoIdleRobotReturnsNullopt)
     {"r2", mrts::RobotState::Moving, {1.0, 0.0}}
   };
   
-  mrts::Task task
-  {
-    1,
-    {0.0, 0.0},
-    {10.0, 10.0}
-  };
+  mrts::Task task = make_task(1, 0, {0.0, 0.0}, {10.0, 10.0});
 
   auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_sq);
   // id will be empty
@@ -131,12 +112,7 @@ TEST(AssignNearestIdle, SkipEmptyFleet)
   std::vector<mrts::Robot> robots
   {};
   
-  mrts::Task task
-  {
-    1,
-    {0.0, 0.0},
-    {10.0, 10.0}
-  };
+  mrts::Task task = make_task(1, 0, {0.0, 0.0}, {10.0, 10.0});
 
   auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_sq);
   // id will be empty -> empty fleet
@@ -151,12 +127,7 @@ TEST(AssignNearestIdle, SkipUnreachableNearer)
     {"r2", mrts::RobotState::Idle, {1.0, 0.0}}
   };
   
-  mrts::Task task
-  {
-    1,
-    {0.0, 0.0},
-    {10.0, 10.0}
-  };
+  mrts::Task task = make_task(1, 0, {0.0, 0.0}, {10.0, 10.0});
 
   auto lmbd = [](const mrts::Pose2D& from, const mrts::Pose2D& to) -> std::optional<double>
   {
@@ -180,12 +151,7 @@ TEST(AssignNearestIdle, AllUnreachableReturnsNullopt)
     {"r2", mrts::RobotState::Idle, {1.0, 0.0}}
   };
   
-  mrts::Task task
-  {
-    1,
-    {0.0, 0.0},
-    {10.0, 10.0}
-  };
+  mrts::Task task = make_task(1, 0, {0.0, 0.0}, {10.0, 10.0});
 
   auto lmbd = [](const mrts::Pose2D&, const mrts::Pose2D&) -> std::optional<double>
   {

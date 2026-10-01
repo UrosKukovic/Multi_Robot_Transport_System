@@ -49,7 +49,8 @@ public:
             {
                 const mrts::Pose2D pickup{req->pickup_x, req->pickup_y};
                 const mrts::Pose2D dropoff{req->dropoff_x, req->dropoff_y};
-                constexpr double min_dist = 0.1;  // metres; closer than this is the same spot for Nav2
+                // closer than this is the same spot for Nav2
+                constexpr double min_dist = 0.1;
 
                 if (mrts::euclidean_sq(pickup, dropoff) < min_dist * min_dist)
                 {
@@ -305,14 +306,42 @@ private:
                     (result.result->error_code == PlanResult::GOAL_OCCUPIED)) &&
                     robot->leg != mrts::Leg::HeadingToDropoff )
                 {
+                    // Broken task
                     set_state(id, mrts::RobotState::Idle);
                     RCLCPP_ERROR(get_logger(), "task %d failed: %s", active_tasks_.at(id).id, result.result->error_msg.c_str());
                     active_tasks_.erase(id);
                 }    
 
                 else
-                    set_state(id, mrts::RobotState::Fault);
+                {
+                    // Robot failed due to being stuck or got NO_VALID_PATH back
+                    bool is_state_set = set_state(id, mrts::RobotState::Fault);
 
+                    if (!is_state_set)
+                        break;
+
+                    
+                    if ( robot->leg == mrts::Leg::HeadingToPickup )
+                    {
+                        auto& task = active_tasks_.at(id);
+                        task.failures++;
+
+                        if (task.failures >= max_task_failures)
+                        {
+                            // Failed on several robots: blame the task, not the robots
+                            RCLCPP_ERROR(get_logger(), "task %d dropped: failed on %d robots, presumed unreachable", task.id, task.failures);
+                            active_tasks_.erase(id);
+                        }
+
+                        else
+                        {
+                            // One failure can't tell robot from task: requeue behind the healthy work
+                            RCLCPP_WARN(get_logger(), "task %d requeued after failure %d/%d", task.id, task.failures, max_task_failures);
+                            pending_tasks_.push_back(task);
+                            active_tasks_.erase(id);
+                        }
+                    }
+                }
                 break;
             }
             case rclcpp_action::ResultCode::CANCELED:
@@ -358,6 +387,8 @@ private:
     std::map<std::string, rclcpp::Subscription<PoseMsg>::SharedPtr> pose_subs_;
     rclcpp::Service<SubmitTask>::SharedPtr submit_srv_;
     int next_task_id_{1};
+    // A task is dropped once it has failed on this many robots
+    static constexpr int max_task_failures = 2;
     std::deque<mrts::Task> pending_tasks_;
     std::map<std::string, mrts::Task> active_tasks_;
     std::vector<mrts::Robot> robots_

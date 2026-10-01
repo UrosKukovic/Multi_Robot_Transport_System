@@ -403,7 +403,7 @@ planner_server:
     introspection_mode: "disabled"
     GridBased:
       plugin: "nav2_navfn_planner::NavfnPlanner"
-      tolerance: 0.5
+      tolerance: 0.0
       use_astar: false
       max_cycles_factor: 4
       allow_unknown: true
