@@ -18,6 +18,11 @@ using GoalHandle = rclcpp_action::ClientGoalHandle<NavigateToPose>;
 using ComputePath = nav2_msgs::action::ComputePathToPose;
 using PlanGoalHandle = rclcpp_action::ClientGoalHandle<ComputePath>;
 
+// ANSI terminal colours for INFO lines for readability
+constexpr const char* GREEN = "\033[32m";
+constexpr const char* CYAN = "\033[36m";
+constexpr const char* RESET = "\033[0m";
+
 class FleetManagerNode : public rclcpp::Node
 {
 public:
@@ -244,7 +249,7 @@ private:
             RCLCPP_ERROR(get_logger(), "%s: %s -> %s", id.c_str(), mrts::to_string(old_state), mrts::to_string(new_state));        
 
         else
-            RCLCPP_INFO(get_logger(), "%s: %s -> %s", id.c_str(), mrts::to_string(old_state), mrts::to_string(new_state));
+            RCLCPP_INFO(get_logger(), "%s%s: %s -> %s%s", CYAN, id.c_str(), mrts::to_string(old_state), mrts::to_string(new_state), RESET);
         
         return true;
     }
@@ -274,12 +279,10 @@ private:
 
                     if (gh == nullptr)
                     {
-                        RCLCPP_INFO(get_logger(), "%s: Goal rejected", id.c_str());
+                        RCLCPP_INFO(get_logger(), "%s: plan request rejected", id.c_str());
 
                         path_request_->requests[id] = std::nullopt;
                     }
-                    else
-                        RCLCPP_INFO(get_logger(), "%s: Goal accepted", id.c_str());
                 };
 
                 options.result_callback = [this, id = r.id, task_id = task.id](const PlanGoalHandle::WrappedResult& result)
@@ -321,7 +324,7 @@ private:
         if (path_request_->sent == 0)
         {
             path_request_.reset();
-            RCLCPP_INFO(get_logger(), "No idle robot with a ready planner");
+            RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000, "No idle robot with a ready planner");
         }
     }
 
@@ -379,7 +382,7 @@ private:
             {
             case rclcpp_action::ResultCode::SUCCEEDED:
             {
-                RCLCPP_INFO(get_logger(), "%s: SUCCEEDED", id.c_str());
+                RCLCPP_INFO(get_logger(), "%s%s: SUCCEEDED%s", GREEN, id.c_str(), RESET);
                 auto robot = find_robot(id);
                 if (robot == nullptr)
                     break;
