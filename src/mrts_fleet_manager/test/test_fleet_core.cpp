@@ -24,7 +24,7 @@ TEST(AssignNearestIdle, PicksRobotOnPickup)
   
   mrts::Task task = make_task(1, 0, {0.0, 0.0}, {10.0, 10.0});
 
-  auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_sq);
+  auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_cost);
   ASSERT_TRUE(id.has_value());
   // Should fail with the intentional bug
   EXPECT_EQ(*id, "r1");
@@ -40,7 +40,7 @@ TEST(AssignNearestIdle, TieGoesToFirstInList)
   
   mrts::Task task = make_task(1, 0, {0.0, 0.0}, {10.0, 10.0});
 
-  auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_sq);
+  auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_cost);
   ASSERT_TRUE(id.has_value());
   EXPECT_EQ(*id, "r1");
 }
@@ -55,7 +55,7 @@ TEST(AssignNearestIdle, PicksNearerOfTwoIdle)
   
   mrts::Task task = make_task(1, 0, {0.0, 0.0}, {10.0, 10.0});
 
-  auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_sq);
+  auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_cost);
   ASSERT_TRUE(id.has_value());
   EXPECT_EQ(*id, "r2");
 }
@@ -70,7 +70,7 @@ TEST(AssignNearestIdle, SkipNearerMoving)
   
   mrts::Task task = make_task(1, 0, {0.0, 0.0}, {10.0, 10.0});
 
-  auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_sq);
+  auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_cost);
   ASSERT_TRUE(id.has_value());
   // skip r2 since its state is "Moving"
   EXPECT_EQ(*id, "r1");
@@ -86,7 +86,7 @@ TEST(AssignNearestIdle, SkipNearerFault)
   
   mrts::Task task = make_task(1, 0, {0.0, 0.0}, {10.0, 10.0});
 
-  auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_sq);
+  auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_cost);
   ASSERT_TRUE(id.has_value());
   // skip r2 since its state is "Fault"
   EXPECT_EQ(*id, "r1");
@@ -102,7 +102,7 @@ TEST(AssignNearestIdle, NoIdleRobotReturnsNullopt)
   
   mrts::Task task = make_task(1, 0, {0.0, 0.0}, {10.0, 10.0});
 
-  auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_sq);
+  auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_cost);
   // id will be empty
   ASSERT_FALSE(id.has_value());
 }
@@ -114,7 +114,7 @@ TEST(AssignNearestIdle, SkipEmptyFleet)
   
   mrts::Task task = make_task(1, 0, {0.0, 0.0}, {10.0, 10.0});
 
-  auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_sq);
+  auto id = mrts::assign_nearest_idle(robots, task, mrts::euclidean_cost);
   // id will be empty -> empty fleet
   ASSERT_FALSE(id.has_value());
 }
@@ -129,11 +129,11 @@ TEST(AssignNearestIdle, SkipUnreachableNearer)
   
   mrts::Task task = make_task(1, 0, {0.0, 0.0}, {10.0, 10.0});
 
-  auto lmbd = [](const mrts::Pose2D& from, const mrts::Pose2D& to) -> std::optional<double>
+  auto lmbd = [](const mrts::Robot& r, const mrts::Pose2D& to) -> std::optional<double>
   {
-    if (from.x == 1.0) return std::nullopt;
+    if (r.id == "r2") return std::nullopt;
 
-    auto cost_val = mrts::euclidean_sq(from, to);
+    auto cost_val = mrts::euclidean_sq(r.pose, to);
     return cost_val;
   };
 
@@ -153,7 +153,7 @@ TEST(AssignNearestIdle, AllUnreachableReturnsNullopt)
   
   mrts::Task task = make_task(1, 0, {0.0, 0.0}, {10.0, 10.0});
 
-  auto lmbd = [](const mrts::Pose2D&, const mrts::Pose2D&) -> std::optional<double>
+  auto lmbd = [](const mrts::Robot&, const mrts::Pose2D&) -> std::optional<double>
   {
     // both Idle robots are unreachable
     return std::nullopt;
@@ -162,6 +162,20 @@ TEST(AssignNearestIdle, AllUnreachableReturnsNullopt)
   auto id = mrts::assign_nearest_idle(robots, task, lmbd);
   // return is nullopt -> no idle robots were assigned --> both unreachable
   ASSERT_FALSE(id.has_value());
+}
+
+TEST(PathLength, LShapeIsSumOfSegments)
+{
+  std::vector<mrts::Pose2D> points
+  {
+    {0, 0},
+    {3, 0},
+    {3, 4}
+  };
+
+  double dist = mrts::path_length(points);
+
+  EXPECT_DOUBLE_EQ(dist, 7.0);
 }
 
 TEST(IsTransitionLegal, TransitionLegal)

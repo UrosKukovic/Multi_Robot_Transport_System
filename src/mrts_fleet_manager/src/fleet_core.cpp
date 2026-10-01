@@ -1,4 +1,5 @@
 #include "mrts_fleet_manager/fleet_core.hpp"
+#include <cmath>
 
 namespace mrts
 {
@@ -6,7 +7,7 @@ namespace mrts
     std::optional<std::string> assign_nearest_idle(
         const std::vector<Robot>& robots,
         const Task& task,
-        std::function<std::optional<double>(const Pose2D&, const Pose2D&)> cost)
+        std::function<std::optional<double>(const Robot&, const Pose2D&)> cost)
     {
         std::optional<std::string> best_id;
 
@@ -17,7 +18,7 @@ namespace mrts
         {
             if (r.state != RobotState::Idle) continue;
             
-            auto cost_val = cost(r.pose, task.pickup);
+            auto cost_val = cost(r, task.pickup);
 
             if (cost_val == std::nullopt) continue; 
 
@@ -32,11 +33,32 @@ namespace mrts
         return best_id;
     }
 
+    // Wrapper for euclidean_sq
+    std::optional<double> euclidean_cost(const Robot& r, const Pose2D& to)
+    {
+        return euclidean_sq(r.pose, to);
+    }
+
     double euclidean_sq(const Pose2D& from, const Pose2D& to)
     {
         double dx = from.x - to.x;
         double dy = from.y - to.y;
         return (dx * dx + dy * dy);
+    }
+
+    double path_length(const std::vector<Pose2D>& points)
+    {
+        double dist{};
+
+        for (std::size_t i = 1; i < points.size(); ++i)
+        {
+            double dx = points[i].x - points[i-1].x;
+            double dy = points[i].y - points[i-1].y;
+            double seg_dist = std::hypot(dx, dy);
+            dist+=seg_dist;
+        }
+
+        return dist;
     }
 
     bool is_legal_transition(RobotState current_state, RobotState new_state)

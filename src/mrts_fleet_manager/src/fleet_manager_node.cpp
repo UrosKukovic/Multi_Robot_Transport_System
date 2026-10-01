@@ -15,6 +15,8 @@ using PoseMsg = geometry_msgs::msg::PoseWithCovarianceStamped;
 using SubmitTask = mrts_interfaces::srv::SubmitTask;
 using PlanResult = nav2_msgs::action::ComputePathToPose::Result;
 using GoalHandle = rclcpp_action::ClientGoalHandle<NavigateToPose>;
+using ComputePath = nav2_msgs::action::ComputePathToPose;
+using PlanGoalHandle = rclcpp_action::ClientGoalHandle<ComputePath>;
 
 class FleetManagerNode : public rclcpp::Node
 {
@@ -24,7 +26,8 @@ public:
         for (auto& r : robots_)
         {
             clients_[r.id] = rclcpp_action::create_client<NavigateToPose>(this, "/"+ r.id + "/navigate_to_pose");
-            // From the tutorial page
+            compute_path_clients_[r.id] = rclcpp_action::create_client<ComputePath>(this, "/"+ r.id + "/compute_path_to_pose");
+
             pose_subs_[r.id] = create_subscription<PoseMsg>(
                 "/" + r.id + "/amcl_pose",
                 rclcpp::QoS(1).transient_local().reliable(),
@@ -86,12 +89,51 @@ private:
             return;
 
         const auto& task = pending_tasks_.front();
+        
+        // No planners asked yet
+        if (!path_request_)
+        {
+            // ask all planners
+            request_paths(task);
+            return;
+        }
 
-        auto best_id = mrts::assign_nearest_idle(robots_, task, mrts::euclidean_sq);
+        bool received_all_requests = ( path_request_->sent == path_request_->requests.size() );
+
+        bool timed_out = ( (now() - path_request_->started).seconds() > 2.0 );
+
+        // Didn't recieve from every planners nor timed out
+        if (!received_all_requests && !timed_out) return;
+
+        auto lmbd = [this](const mrts::Robot& r, const mrts::Pose2D&) -> std::optional<double>
+        {
+            auto it = path_request_->requests.find(r.id);
+            if (it != path_request_->requests.end())
+            {
+                return it->second;
+            }
+            else
+            {
+                return std::nullopt;
+            }
+        };
+
+        bool any_answer = !path_request_->requests.empty();
+
+        auto best_id = mrts::assign_nearest_idle(robots_, task, lmbd);
+        path_request_.reset();
 
         if (best_id == std::nullopt)
         {
-            RCLCPP_INFO(get_logger(), "No idle robots");
+            if (!any_answer)
+                RCLCPP_INFO(get_logger(), "No planner answered");
+            
+            else
+            {
+                RCLCPP_ERROR(get_logger(), "Task %d unreachable from every robot", pending_tasks_.front().id);
+                pending_tasks_.pop_front();
+            }
+
             return;
         }
 
@@ -205,6 +247,82 @@ private:
             RCLCPP_INFO(get_logger(), "%s: %s -> %s", id.c_str(), mrts::to_string(old_state), mrts::to_string(new_state));
         
         return true;
+    }
+
+    void request_paths(const mrts::Task& task)
+    {
+        path_request_ = PathRequest
+        {
+            .task_id = task.id,
+            .started = now(),
+            .requests{}
+        };
+
+        for (auto& r : robots_)
+        {
+            if ( (r.state == mrts::RobotState::Idle) && (compute_path_clients_.at(r.id)->action_server_is_ready()) )
+            {
+                // build a goal
+                ComputePath::Goal request;
+                request.goal = make_goal(task.pickup).pose;
+
+                rclcpp_action::Client<ComputePath>::SendGoalOptions options;
+
+                options.goal_response_callback = [this, id = r.id, task_id = task.id](PlanGoalHandle::SharedPtr gh)
+                {
+                    if (!path_request_ || path_request_->task_id != task_id) return;
+
+                    if (gh == nullptr)
+                    {
+                        RCLCPP_INFO(get_logger(), "%s: Goal rejected", id.c_str());
+
+                        path_request_->requests[id] = std::nullopt;
+                    }
+                    else
+                        RCLCPP_INFO(get_logger(), "%s: Goal accepted", id.c_str());
+                };
+
+                options.result_callback = [this, id = r.id, task_id = task.id](const PlanGoalHandle::WrappedResult& result)
+                {
+                    if (!path_request_ || path_request_->task_id != task_id) return;
+
+                    if ( (result.code == rclcpp_action::ResultCode::SUCCEEDED) && !result.result->path.poses.empty() )
+                    {
+                        std::vector<mrts::Pose2D> points;
+                        for (const auto& p : result.result->path.poses)
+                        {
+                            points.push_back(
+                                {
+                                    .x = p.pose.position.x,
+                                    .y = p.pose.position.y
+                                }
+                            );
+                        }
+
+                        double len = mrts::path_length(points);
+
+                        path_request_->requests[id] = len;
+                        RCLCPP_INFO(get_logger(), "robot id: %s; len: %f", id.c_str(), len);
+                    }
+
+                    else
+                    {
+                        path_request_->requests[id] = std::nullopt;
+                        RCLCPP_WARN(get_logger(), "%s: no path", id.c_str());
+                    }
+                };
+
+                // Send a goal
+                compute_path_clients_.at(r.id)->async_send_goal(request, options);
+                path_request_->sent++;
+            }
+        }
+
+        if (path_request_->sent == 0)
+        {
+            path_request_.reset();
+            RCLCPP_INFO(get_logger(), "No idle robot with a ready planner");
+        }
     }
 
     NavigateToPose::Goal make_goal(const mrts::Pose2D& p)
@@ -381,9 +499,18 @@ private:
         clients_.at(id)->async_send_goal(goal, options);
     }
 
+    struct PathRequest
+    {
+        int task_id{};
+        rclcpp::Time started;
+        std::size_t sent{};
+        std::map<std::string, std::optional<double>> requests;
+    };
+
     rclcpp::TimerBase::SharedPtr timer_;
     std::map<std::string, rclcpp::TimerBase::SharedPtr> work_timers_;
     std::map<std::string, rclcpp_action::Client<NavigateToPose>::SharedPtr> clients_;
+    std::map<std::string, rclcpp_action::Client<ComputePath>::SharedPtr> compute_path_clients_;
     std::map<std::string, rclcpp::Subscription<PoseMsg>::SharedPtr> pose_subs_;
     rclcpp::Service<SubmitTask>::SharedPtr submit_srv_;
     int next_task_id_{1};
@@ -391,6 +518,7 @@ private:
     static constexpr int max_task_failures = 2;
     std::deque<mrts::Task> pending_tasks_;
     std::map<std::string, mrts::Task> active_tasks_;
+    std::optional<PathRequest> path_request_;
     std::vector<mrts::Robot> robots_
     {
         {"robot1", mrts::RobotState::Idle, {0.0, 0.0}},
