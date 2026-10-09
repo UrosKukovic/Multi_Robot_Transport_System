@@ -7,6 +7,7 @@
 #include <vector>
 #include <map>
 #include <deque>
+#include <stdexcept>
 
 #include "mrts_fleet_manager/fleet_core.hpp"
 
@@ -28,6 +29,22 @@ class FleetManagerNode : public rclcpp::Node
 public:
     FleetManagerNode() : Node("fleet_manager")
     {
+        declare_parameter("max_task_failures", 2);
+        declare_parameter("quote_timeout", 2.0);
+        declare_parameter<std::vector<std::string>>("robot_ids", std::vector<std::string>{});
+        max_task_failures_ = get_parameter("max_task_failures").as_int();
+        quote_timeout_ = get_parameter("quote_timeout").as_double();
+        auto ids = get_parameter("robot_ids").as_string_array();
+        if (ids.empty())
+        {
+            RCLCPP_FATAL(get_logger(), "No robots to launch with!");
+            throw std::runtime_error("parameter 'robot_ids' is missing. Configure it with ""'-p robot_ids:=\"['robot1','robot2','robot3']\"'");
+        }
+        for (const auto& id: ids)
+        {
+            robots_.push_back({id, mrts::RobotState::Idle, {0.0, 0.0}});
+        }
+
         for (auto& r : robots_)
         {
             clients_[r.id] = rclcpp_action::create_client<NavigateToPose>(this, "/"+ r.id + "/navigate_to_pose");
@@ -105,7 +122,7 @@ private:
 
         bool received_all_requests = ( path_request_->sent == path_request_->requests.size() );
 
-        bool timed_out = ( (now() - path_request_->started).seconds() > 2.0 );
+        bool timed_out = ( (now() - path_request_->started).seconds() > quote_timeout_ );
 
         // Didn't recieve from every planners nor timed out
         if (!received_all_requests && !timed_out) return;
@@ -447,7 +464,7 @@ private:
                         auto& task = active_tasks_.at(id);
                         task.failures++;
 
-                        if (task.failures >= max_task_failures)
+                        if (task.failures >= max_task_failures_)
                         {
                             // Failed on several robots: blame the task, not the robots
                             RCLCPP_ERROR(get_logger(), "task %d dropped: failed on %d robots, presumed unreachable", task.id, task.failures);
@@ -457,7 +474,7 @@ private:
                         else
                         {
                             // One failure can't tell robot from task: requeue behind the healthy work
-                            RCLCPP_WARN(get_logger(), "task %d requeued after failure %d/%d", task.id, task.failures, max_task_failures);
+                            RCLCPP_WARN(get_logger(), "task %d requeued after failure %d/%d", task.id, task.failures, max_task_failures_);
                             pending_tasks_.push_back(task);
                             active_tasks_.erase(id);
                         }
@@ -518,15 +535,12 @@ private:
     rclcpp::Service<SubmitTask>::SharedPtr submit_srv_;
     int next_task_id_{1};
     // A task is dropped once it has failed on this many robots
-    static constexpr int max_task_failures = 2;
+    int max_task_failures_{2};
+    double quote_timeout_{2.0};
     std::deque<mrts::Task> pending_tasks_;
     std::map<std::string, mrts::Task> active_tasks_;
     std::optional<PathRequest> path_request_;
-    std::vector<mrts::Robot> robots_
-    {
-        {"robot1", mrts::RobotState::Idle, {0.0, 0.0}},
-        {"robot2", mrts::RobotState::Idle, {1.5, 0.0}}
-    };
+    std::vector<mrts::Robot> robots_;
 };
 
 int main(int argc, char** argv)
