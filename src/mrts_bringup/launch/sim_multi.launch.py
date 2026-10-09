@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import tempfile
+import yaml
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -14,15 +15,14 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, SetRemap
 from nav2_common.launch import RewrittenYaml
 
-# Start poses in the MAP frame -- the same frame the fleet manager uses.
-ROBOTS = [
-    {'name': 'robot1', 'x': 0.0, 'y': 0.0, 'yaw': 0.0},
-    {'name': 'robot2', 'x': 1.5, 'y': 0.0, 'yaw': 0.0},
-]
-
 # SLAM started at Gazebo world (-2.0, -0.5), so that world point is map (0, 0).
 # world = map + MAP_ORIGIN_IN_WORLD
 MAP_ORIGIN_IN_WORLD = (-2.0, -0.5)
+
+
+def load_robots(path):
+    with open(path, 'r') as f:
+        return yaml.safe_load(f)['robots']
 
 
 def robot_group(robot, nav2_dir, map_yaml, params_yaml, use_rviz):
@@ -79,8 +79,11 @@ def generate_launch_description():
 
     map_yaml = os.path.join(mrts_dir, 'maps', 'warehouse.yaml')
     params_yaml = os.path.join(mrts_dir, 'config', 'nav2_params.yaml')
+    robots_yaml = os.path.join(mrts_dir, 'config', 'robots.yaml')
     world = os.path.join(sim_dir, 'worlds', 'tb3_sandbox.sdf.xacro')
     use_rviz = LaunchConfiguration('use_rviz')
+
+    data = load_robots(robots_yaml)
 
     # One Gazebo server for all robots (same as cloned_multi_tb3_simulation_launch.py).
     # mkstemp creates the file atomically (mktemp only picks a name -> race); xacro overwrites it.
@@ -105,7 +108,7 @@ def generate_launch_description():
             on_shutdown=[OpaqueFunction(function=lambda _: os.remove(world_sdf))])),
     ])
 
-    for robot in ROBOTS:
+    for robot in data:
         ld.add_action(robot_group(robot, nav2_dir, map_yaml, params_yaml, use_rviz))
 
     return ld

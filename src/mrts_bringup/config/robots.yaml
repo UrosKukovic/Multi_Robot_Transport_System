@@ -1,0 +1,10 @@
+# Start poses in the MAP frame -- the same frame the fleet manager uses.
+robots:
+  - name: "robot1"
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+  - name: "robot2"
+    x: 1.5
+    y: 0.0
+    yaw: 0.0
