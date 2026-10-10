@@ -102,13 +102,16 @@ rosdep install --from-paths src --ignore-src -y
 colcon build
 ```
 
-Then in three terminals (run `source install/setup.bash` in each):
+Then in two terminals (run `source install/setup.bash` in each):
 
 ```bash
-ros2 launch mrts_bringup sim_multi.launch.py
-ros2 run mrts_fleet_manager fleet_manager_node
+ros2 launch mrts_bringup demo.launch.py
 bash src/mrts_bringup/scripts/demo_tasks.sh
 ```
+
+`demo.launch.py` starts the simulation and the fleet manager together. To run them separately, launch `sim_multi.launch.py` and `fleet.launch.py` in two terminals.
+
+The robots are listed in `src/mrts_bringup/config/robots.yaml`. The fleet manager also has two parameters, `max_task_failures` (default 2) and `quote_timeout` (default 2.0 seconds). To change them, add them to the `parameters` list in `fleet.launch.py`.
 
 Or send one task yourself (coordinates are in the map frame):
 
@@ -130,7 +133,7 @@ In a second terminal:
 
 ```bash
 docker exec -it mrts /entrypoint.sh bash
-ros2 run mrts_fleet_manager fleet_manager_node
+ros2 launch mrts_bringup fleet.launch.py
 ```
 
 `docker exec` skips the entrypoint, so it is called by hand to source the workspace.
