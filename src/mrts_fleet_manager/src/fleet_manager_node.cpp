@@ -397,118 +397,122 @@ private:
         {
             switch (result.code)
             {
-            case rclcpp_action::ResultCode::SUCCEEDED:
-            {
-                RCLCPP_INFO(get_logger(), "%s%s: SUCCEEDED%s", GREEN, id.c_str(), RESET);
-                auto robot = find_robot(id);
-                if (robot == nullptr)
-                    break;
-
-                if (robot->leg == mrts::Leg::HeadingToPickup)
+                case rclcpp_action::ResultCode::SUCCEEDED:
                 {
-                    set_state(id, mrts::RobotState::Loading);
-                    work_timers_[id] = create_wall_timer(std::chrono::seconds(3), [this, id](){ dropoff(id); });
-                }
-
-                else
-                {
-                    set_state(id, mrts::RobotState::Unloading);
-                    work_timers_[id] = create_wall_timer(std::chrono::seconds(3), [this, id](){
-                        work_timers_.at(id)->cancel();
-                        auto robot = find_robot(id);
-
-                        if (robot == nullptr)
-                        {
-                            RCLCPP_ERROR(get_logger(), "No found robots!");
-                            return;
-                        }
-
-                        set_state(id, mrts::RobotState::Idle);
-                        RCLCPP_INFO(get_logger(), "%s: Idle at (%.2f, %.2f)", id.c_str(), robot->pose.x, robot->pose.y);
-                        active_tasks_.erase(id);
-                        robot->leg = mrts::Leg::HeadingToPickup;
-                    });
-                }
-                break;
-            }
-            case rclcpp_action::ResultCode::ABORTED:
-            {
-                auto robot = find_robot(id);
-                if (robot == nullptr)
-                    break;
-
-                RCLCPP_WARN(get_logger(), "%s: ABORTED", id.c_str());
-                RCLCPP_WARN(get_logger(), "error_code: %d; error_msg: %s", result.result->error_code, result.result->error_msg.c_str());
-                
-                if ( ((result.result->error_code == PlanResult::GOAL_OUTSIDE_MAP) || 
-                    (result.result->error_code == PlanResult::GOAL_OCCUPIED)) &&
-                    robot->leg != mrts::Leg::HeadingToDropoff )
-                {
-                    // Broken task
-                    set_state(id, mrts::RobotState::Idle);
-                    RCLCPP_ERROR(get_logger(), "task %d failed: %s", active_tasks_.at(id).id, result.result->error_msg.c_str());
-                    active_tasks_.erase(id);
-                }    
-
-                else
-                {
-                    // Robot failed due to being stuck or got NO_VALID_PATH back
-                    bool is_state_set = set_state(id, mrts::RobotState::Fault);
-
-                    if (!is_state_set)
+                    RCLCPP_INFO(get_logger(), "%s%s: SUCCEEDED%s", GREEN, id.c_str(), RESET);
+                    auto robot = find_robot(id);
+                    if (robot == nullptr)
                         break;
 
-                    
-                    if ( robot->leg == mrts::Leg::HeadingToPickup )
+                    if (robot->leg == mrts::Leg::HeadingToPickup)
                     {
-                        auto& task = active_tasks_.at(id);
-                        task.failures++;
+                        set_state(id, mrts::RobotState::Loading);
+                        work_timers_[id] = create_wall_timer(std::chrono::seconds(3), [this, id](){ dropoff(id); });
+                    }
 
-                        if (task.failures >= max_task_failures_)
-                        {
-                            // Failed on several robots: blame the task, not the robots
-                            RCLCPP_ERROR(get_logger(), "task %d dropped: failed on %d robots, presumed unreachable", task.id, task.failures);
+                    else
+                    {
+                        set_state(id, mrts::RobotState::Unloading);
+                        work_timers_[id] = create_wall_timer(std::chrono::seconds(3), [this, id](){
+                            work_timers_.at(id)->cancel();
+                            auto robot = find_robot(id);
+
+                            if (robot == nullptr)
+                            {
+                                RCLCPP_ERROR(get_logger(), "No found robots!");
+                                return;
+                            }
+
+                            set_state(id, mrts::RobotState::Idle);
+                            RCLCPP_INFO(get_logger(), "%s: Idle at (%.2f, %.2f)", id.c_str(), robot->pose.x, robot->pose.y);
                             active_tasks_.erase(id);
-                        }
+                            robot->leg = mrts::Leg::HeadingToPickup;
+                        });
+                    }
+                    break;
+                }
+                case rclcpp_action::ResultCode::ABORTED:
+                {
+                    auto robot = find_robot(id);
+                    if (robot == nullptr)
+                        break;
 
-                        else
-                        {
+                    RCLCPP_WARN(get_logger(), "%s: ABORTED", id.c_str());
+                    RCLCPP_WARN(get_logger(), "error_code: %d; error_msg: %s", result.result->error_code, result.result->error_msg.c_str());
+                    
+                    const bool is_goal_bad = ((result.result->error_code == PlanResult::GOAL_OUTSIDE_MAP) || 
+                        (result.result->error_code == PlanResult::GOAL_OCCUPIED));
+
+                    auto& task = active_tasks_.at(id);
+
+                    if (robot->leg == mrts::Leg::HeadingToPickup) task.failures++;
+
+                    const auto action = mrts::decide_abort(is_goal_bad, robot->leg, task.failures, max_task_failures_);
+
+                    bool is_state_set = false;
+
+                    switch (action)
+                    {
+                        case mrts::AbortAction::IdleDropTask:
+                            set_state(id, mrts::RobotState::Idle);
+                            RCLCPP_ERROR(get_logger(), "task %d failed: %s", active_tasks_.at(id).id, result.result->error_msg.c_str());
+                            active_tasks_.erase(id);
+                            break;
+                        
+                        case mrts::AbortAction::FaultRequeueTask:
+                            is_state_set = set_state(id, mrts::RobotState::Fault);
+                            if (!is_state_set)
+                                break;
+
                             // One failure can't tell robot from task: requeue behind the healthy work
                             RCLCPP_WARN(get_logger(), "task %d requeued after failure %d/%d", task.id, task.failures, max_task_failures_);
                             pending_tasks_.push_back(task);
                             active_tasks_.erase(id);
-                        }
+                            break;
+                            
+                        case mrts::AbortAction::FaultDropTask:
+                            is_state_set = set_state(id, mrts::RobotState::Fault);
+                            if (!is_state_set)
+                                break;
+                            
+                            RCLCPP_ERROR(get_logger(), "task %d dropped: failed on %d robots, presumed unreachable", task.id, task.failures);
+                            active_tasks_.erase(id);
+                            break;
+
+                        case mrts::AbortAction::FaultKeepTask:
+                            is_state_set = set_state(id, mrts::RobotState::Fault);
+                            if (!is_state_set)
+                                break;
+                            break;
                     }
-                }
-                break;
-            }
-            case rclcpp_action::ResultCode::CANCELED:
-            {
-                RCLCPP_INFO(get_logger(), "%s: CANCELED", id.c_str());
-
-                auto robot = find_robot(id);
-                if (robot == nullptr)
                     break;
-
-                if (robot->leg == mrts::Leg::HeadingToDropoff)
-                {
-                    // The robot is loaded. Cancelled means Moving -> Fault
-                    set_state(id, mrts::RobotState::Fault);
                 }
-                else
+                case rclcpp_action::ResultCode::CANCELED:
                 {
-                    // Robot is not loaded - task was cancelled on its way to pickup (Moving -> Idle)
-                    set_state(id, mrts::RobotState::Idle);
-                    pending_tasks_.push_back(active_tasks_[id]);
-                    active_tasks_.erase(id);
-                }
-                break;
-            }
-            default:
-                RCLCPP_INFO(get_logger(), "INVALID");
-                break;
-            }
+                    RCLCPP_INFO(get_logger(), "%s: CANCELED", id.c_str());
 
+                    auto robot = find_robot(id);
+                    if (robot == nullptr)
+                        break;
+
+                    if (robot->leg == mrts::Leg::HeadingToDropoff)
+                    {
+                        // The robot is loaded. Cancelled means Moving -> Fault
+                        set_state(id, mrts::RobotState::Fault);
+                    }
+                    else
+                    {
+                        // Robot is not loaded - task was cancelled on its way to pickup (Moving -> Idle)
+                        set_state(id, mrts::RobotState::Idle);
+                        pending_tasks_.push_back(active_tasks_[id]);
+                        active_tasks_.erase(id);
+                    }
+                    break;
+                }
+                default:
+                    RCLCPP_INFO(get_logger(), "INVALID");
+                    break;
+                }
         };
 
         options.feedback_callback = [this, id](GoalHandle::SharedPtr, const std::shared_ptr<const NavigateToPose::Feedback> fb)

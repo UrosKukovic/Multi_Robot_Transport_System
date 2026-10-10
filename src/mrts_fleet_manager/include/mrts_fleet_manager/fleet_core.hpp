@@ -27,6 +27,14 @@ namespace mrts
         HeadingToDropoff
     };
 
+    enum class AbortAction
+    {
+        IdleDropTask,
+        FaultRequeueTask,
+        FaultDropTask,
+        FaultKeepTask
+    };
+
     struct Robot
     {
         std::string id;
@@ -51,4 +59,5 @@ namespace mrts
     double path_length(const std::vector<Pose2D>& points);
     bool is_legal_transition(RobotState current_state, RobotState new_state);
     const char* to_string(mrts::RobotState);
+    AbortAction decide_abort(bool bad_goal, Leg leg, int current_failures, int max_failures);
 }

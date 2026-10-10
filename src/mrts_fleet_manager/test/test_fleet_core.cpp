@@ -206,3 +206,38 @@ TEST(IsTransitionLegal, TransitionIllegalFaultMoving)
 
   ASSERT_FALSE(is_legal);
 }
+
+TEST(DecideOnAbort, RobotFaultRequeueTask)
+{
+  auto action = mrts::decide_abort(false, mrts::Leg::HeadingToPickup, 1, 2);
+
+  EXPECT_EQ(action, mrts::AbortAction::FaultRequeueTask);
+}
+
+TEST(DecideOnAbort, RobotIdleDropTask)
+{
+  auto action = mrts::decide_abort(true, mrts::Leg::HeadingToPickup, 2, 2);
+
+  EXPECT_EQ(action, mrts::AbortAction::IdleDropTask);
+}
+
+TEST(DecideOnAbort, RobotFaultDropTask)
+{
+  auto action = mrts::decide_abort(false, mrts::Leg::HeadingToPickup, 2, 2);
+
+  EXPECT_EQ(action, mrts::AbortAction::FaultDropTask);
+}
+
+TEST(DecideOnAbort, RobotFaultKeepTask)
+{
+  auto action = mrts::decide_abort(false, mrts::Leg::HeadingToDropoff, 0, 2);
+
+  EXPECT_EQ(action, mrts::AbortAction::FaultKeepTask);
+}
+
+TEST(DecideOnAbort, RobotFaultKeepTaskBadGoal)
+{
+  auto action = mrts::decide_abort(true, mrts::Leg::HeadingToDropoff, 0, 2);
+
+  EXPECT_EQ(action, mrts::AbortAction::FaultKeepTask);
+}
