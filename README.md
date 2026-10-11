@@ -146,7 +146,7 @@ docker run --rm mrts bash -c "colcon test && colcon test-result --verbose"
 
 ## Limitations
 
-- The robot list and start poses are hard-coded.
+- The robot list and start poses live in `src/mrts_bringup/config/robots.yaml`, but the fleet is fixed at launch, robots cannot join or leave while it runs.
 - A robot in Fault stays there, there is no recovery (human recovery in production)
 - Only the path to the pickup is checked. An unreachable dropoff is found out with a loaded robot.
 - No traffic control, hence no avoiding between robots
