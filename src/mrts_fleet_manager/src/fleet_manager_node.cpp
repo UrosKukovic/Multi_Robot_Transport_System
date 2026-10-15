@@ -271,6 +271,52 @@ private:
         return true;
     }
 
+    void apply_action(const std::string& id, mrts::FailureAction action)
+    {
+        auto robot = find_robot(id);
+        if (robot == nullptr) return;
+        auto& task = active_tasks_.at(id);
+        bool is_state_set = false;
+
+        switch (action)
+        {
+            case mrts::FailureAction::FaultDropTask:
+                is_state_set = set_state(id, mrts::RobotState::Fault);
+                if (!is_state_set) break;
+                
+                RCLCPP_ERROR(get_logger(), "task %d dropped: failed on %d robots, presumed unreachable", task.id, task.failures);
+                active_tasks_.erase(id);
+                break;
+            
+            case mrts::FailureAction::FaultKeepTask:
+                set_state(id, mrts::RobotState::Fault);
+                break;
+        
+            case mrts::FailureAction::FaultRequeueTask:
+                is_state_set = set_state(robot->id, mrts::RobotState::Fault);
+                if (!is_state_set) break;
+
+                RCLCPP_WARN(get_logger(), "task %d requeued after failure %d/%d", task.id, task.failures, max_task_failures_);
+                pending_tasks_.push_back(task);
+                active_tasks_.erase(id);
+                break;
+
+            case mrts::FailureAction::IdleDropTask:
+                is_state_set = set_state(id, mrts::RobotState::Idle);
+                if (!is_state_set) break;
+                active_tasks_.erase(id);
+                break;
+
+            case mrts::FailureAction::IdleRequeueTask:
+                is_state_set = set_state(robot->id, mrts::RobotState::Idle);
+                if (!is_state_set) break;
+
+                pending_tasks_.push_back(task);
+                active_tasks_.erase(id);
+                break;
+        }
+    }
+
     void request_paths(const mrts::Task& task)
     {
         path_request_ = PathRequest
@@ -376,18 +422,7 @@ private:
                 if (robot == nullptr)
                     return;
 
-                if (robot->leg == mrts::Leg::HeadingToDropoff)
-                {
-                    // The robot is loaded. Rejected means Moving -> Fault because it was rejected on its way to dropoff
-                    set_state(id, mrts::RobotState::Fault);
-                }
-                else
-                {
-                    // Robot is not loaded - task was rejected on its way to pickup (Moving -> Idle)
-                    set_state(id, mrts::RobotState::Idle);
-                    pending_tasks_.push_back(active_tasks_[id]);
-                    active_tasks_.erase(id);
-                }
+                apply_action(id, mrts::decide_unfinished(robot->leg));
             }
             else
                 RCLCPP_INFO(get_logger(), "%s: Goal accepted", id.c_str());
@@ -448,43 +483,9 @@ private:
                     if (robot->leg == mrts::Leg::HeadingToPickup) task.failures++;
 
                     const auto action = mrts::decide_abort(is_goal_bad, robot->leg, task.failures, max_task_failures_);
+                    
+                    apply_action(robot->id, action);
 
-                    bool is_state_set = false;
-
-                    switch (action)
-                    {
-                        case mrts::AbortAction::IdleDropTask:
-                            set_state(id, mrts::RobotState::Idle);
-                            RCLCPP_ERROR(get_logger(), "task %d failed: %s", active_tasks_.at(id).id, result.result->error_msg.c_str());
-                            active_tasks_.erase(id);
-                            break;
-                        
-                        case mrts::AbortAction::FaultRequeueTask:
-                            is_state_set = set_state(id, mrts::RobotState::Fault);
-                            if (!is_state_set)
-                                break;
-
-                            // One failure can't tell robot from task: requeue behind the healthy work
-                            RCLCPP_WARN(get_logger(), "task %d requeued after failure %d/%d", task.id, task.failures, max_task_failures_);
-                            pending_tasks_.push_back(task);
-                            active_tasks_.erase(id);
-                            break;
-                            
-                        case mrts::AbortAction::FaultDropTask:
-                            is_state_set = set_state(id, mrts::RobotState::Fault);
-                            if (!is_state_set)
-                                break;
-                            
-                            RCLCPP_ERROR(get_logger(), "task %d dropped: failed on %d robots, presumed unreachable", task.id, task.failures);
-                            active_tasks_.erase(id);
-                            break;
-
-                        case mrts::AbortAction::FaultKeepTask:
-                            is_state_set = set_state(id, mrts::RobotState::Fault);
-                            if (!is_state_set)
-                                break;
-                            break;
-                    }
                     break;
                 }
                 case rclcpp_action::ResultCode::CANCELED:
@@ -492,21 +493,9 @@ private:
                     RCLCPP_INFO(get_logger(), "%s: CANCELED", id.c_str());
 
                     auto robot = find_robot(id);
-                    if (robot == nullptr)
-                        break;
+                    if (robot == nullptr) break;
 
-                    if (robot->leg == mrts::Leg::HeadingToDropoff)
-                    {
-                        // The robot is loaded. Cancelled means Moving -> Fault
-                        set_state(id, mrts::RobotState::Fault);
-                    }
-                    else
-                    {
-                        // Robot is not loaded - task was cancelled on its way to pickup (Moving -> Idle)
-                        set_state(id, mrts::RobotState::Idle);
-                        pending_tasks_.push_back(active_tasks_[id]);
-                        active_tasks_.erase(id);
-                    }
+                    apply_action(id, mrts::decide_unfinished(robot->leg));
                     break;
                 }
                 default:
