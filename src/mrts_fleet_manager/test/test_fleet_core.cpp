@@ -206,3 +206,52 @@ TEST(IsTransitionLegal, TransitionIllegalFaultMoving)
 
   ASSERT_FALSE(is_legal);
 }
+
+TEST(DecideAbort, RobotFaultRequeueTask)
+{
+  auto action = mrts::decide_abort(false, mrts::Leg::HeadingToPickup, 1, 2);
+
+  EXPECT_EQ(action, mrts::FailureAction::FaultRequeueTask);
+}
+
+TEST(DecideAbort, RobotIdleDropTask)
+{
+  auto action = mrts::decide_abort(true, mrts::Leg::HeadingToPickup, 2, 2);
+
+  EXPECT_EQ(action, mrts::FailureAction::IdleDropTask);
+}
+
+TEST(DecideAbort, RobotFaultDropTask)
+{
+  auto action = mrts::decide_abort(false, mrts::Leg::HeadingToPickup, 2, 2);
+
+  EXPECT_EQ(action, mrts::FailureAction::FaultDropTask);
+}
+
+TEST(DecideAbort, RobotFaultKeepTask)
+{
+  auto action = mrts::decide_abort(false, mrts::Leg::HeadingToDropoff, 0, 2);
+
+  EXPECT_EQ(action, mrts::FailureAction::FaultKeepTask);
+}
+
+TEST(DecideAbort, RobotFaultKeepTaskBadGoal)
+{
+  auto action = mrts::decide_abort(true, mrts::Leg::HeadingToDropoff, 0, 2);
+
+  EXPECT_EQ(action, mrts::FailureAction::FaultKeepTask);
+}
+
+TEST(DecideUnfinished, OnPickupLegRobotIdleTaskRequeue)
+{
+  auto action = mrts::decide_unfinished(mrts::Leg::HeadingToPickup);
+
+  EXPECT_EQ(action, mrts::FailureAction::IdleRequeueTask);
+}
+
+TEST(DecideUnfinished, OnDropoffLegRobotFaultKeepTask)
+{
+  auto action = mrts::decide_unfinished(mrts::Leg::HeadingToDropoff);
+
+  EXPECT_EQ(action, mrts::FailureAction::FaultKeepTask);
+}

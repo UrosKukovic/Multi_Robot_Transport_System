@@ -107,4 +107,19 @@ namespace mrts
 
         return "Unknown";
     }
+
+    FailureAction decide_abort(bool bad_goal, Leg leg, int current_failures, int max_failures)
+    {
+        if (leg == mrts::Leg::HeadingToDropoff) return FailureAction::FaultKeepTask;
+        if (bad_goal) return FailureAction::IdleDropTask;
+        if (current_failures >= max_failures) return FailureAction::FaultDropTask;
+
+        return FailureAction::FaultRequeueTask;
+    }
+
+    FailureAction decide_unfinished(Leg leg)
+    {
+        if (leg == mrts::Leg::HeadingToPickup) return FailureAction::IdleRequeueTask;
+        return FailureAction::FaultKeepTask;
+    }
 }
