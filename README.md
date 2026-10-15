@@ -67,7 +67,7 @@ sequenceDiagram
 | Mine | Used |
 |---|---|
 | `mrts_fleet_manager`: task queue, robot picking, state machine, failure handling | Nav2: AMCL, planner, controller |
-| `fleet_core`: the logic as plain C++ without ROS, so it can be tested alone (13 gtests) | SLAM Toolbox, only to make the map |
+| `fleet_core`: the logic as plain C++ without ROS, so it can be tested alone | SLAM Toolbox, only to make the map |
 | `mrts_interfaces`: the `SubmitTask` service | `nav2_minimal_tb3_sim`: robots and world |
 | `mrts_bringup`: launch files, Nav2 params, the map | |
 
@@ -75,7 +75,11 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    A[Nav2 stopped the goal] --> B{On the way to pickup?}
+    A[Goal did not finish] --> J{Aborted by Nav2?}
+    J -- no, cancelled or rejected --> K{On the way to pickup?}
+    K -- yes --> L[Robot back to Idle<br/>task back in the queue]
+    K -- no, robot is loaded --> F
+    J -- yes --> B{On the way to pickup?}
     B -- no, robot is loaded --> F[Robot: Fault<br/>task stays on the robot]
     B -- yes --> C{Goal outside map<br/>or on a wall?}
     C -- yes --> D[Bad task: drop it<br/>robot back to Idle]
