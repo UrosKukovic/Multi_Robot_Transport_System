@@ -275,6 +275,7 @@ private:
     {
         auto robot = find_robot(id);
         if (robot == nullptr) return;
+        if (active_tasks_.count(id) == 0) return;
         auto& task = active_tasks_.at(id);
         bool is_state_set = false;
 
@@ -478,6 +479,7 @@ private:
                     const bool is_goal_bad = ((result.result->error_code == PlanResult::GOAL_OUTSIDE_MAP) || 
                         (result.result->error_code == PlanResult::GOAL_OCCUPIED));
 
+                    if (active_tasks_.count(id) == 0) break;
                     auto& task = active_tasks_.at(id);
 
                     if (robot->leg == mrts::Leg::HeadingToPickup) task.failures++;
