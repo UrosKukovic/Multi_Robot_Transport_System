@@ -1,5 +1,7 @@
 # Multi-Robot Transport System
 
+[![CI](https://github.com/UrosKukovic/Multi_Robot_Transport_System/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/UrosKukovic/Multi_Robot_Transport_System/actions/workflows/ci.yml)
+
 A fleet of mobile robots coordinated by fleet manager that assigns the nearest available robot and hands out the task (pickup -> dropoff) in a TurtleBot3 sandbox world using Nav2 for localization and SLAM toolbox for building the map. This project is useful for somebody starting with ROS2 and C++ and this was also my primary reason for building it. This personal project is using ROS2 Lyrical, TurtleBot3 robot model, TurtleBot3 sandbox world and Gazebo Jetty. The fleet manager was written from scratch including the state machine, failure handling and unit tests for the core logic.
 
 ## Demo

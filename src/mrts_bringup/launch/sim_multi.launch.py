@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
 import tempfile
-import yaml
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -14,6 +13,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, SetRemap
 from nav2_common.launch import RewrittenYaml
+import yaml
 
 # SLAM started at Gazebo world (-2.0, -0.5), so that world point is map (0, 0).
 # world = map + MAP_ORIGIN_IN_WORLD
