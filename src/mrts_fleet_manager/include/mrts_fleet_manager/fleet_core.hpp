@@ -36,6 +36,12 @@ namespace mrts
         IdleRequeueTask
     };
 
+    enum class SuccessAction
+    {
+        StartLoading,
+        StartUnloading
+    };
+
     struct Robot
     {
         std::string id;
@@ -62,5 +68,6 @@ namespace mrts
     bool is_task_valid(const Pose2D& pickup, const Pose2D& dropoff);
     const char* to_string(mrts::RobotState);
     FailureAction decide_abort(bool bad_goal, Leg leg, int current_failures, int max_failures);
+    SuccessAction decide_success(Leg leg);
     FailureAction decide_unfinished(Leg leg);
 }

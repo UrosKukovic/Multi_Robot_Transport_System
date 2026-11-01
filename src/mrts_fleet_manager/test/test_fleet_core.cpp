@@ -276,3 +276,17 @@ TEST(IsTaskValid, OnPickupDropoffBiggerThanMinDistanceTaskValid)
 
     EXPECT_TRUE(mrts::is_task_valid(task.pickup, task.dropoff));
 }
+
+TEST(DecideSuccess, OnPickupLegStartLoading)
+{
+    auto action = mrts::decide_success(mrts::Leg::HeadingToPickup);
+
+    EXPECT_EQ(action, mrts::SuccessAction::StartLoading);
+}
+
+TEST(DecideSuccess, OnDropoffLegStartUnloading)
+{
+    auto action = mrts::decide_success(mrts::Leg::HeadingToDropoff);
+
+    EXPECT_EQ(action, mrts::SuccessAction::StartUnloading);
+}

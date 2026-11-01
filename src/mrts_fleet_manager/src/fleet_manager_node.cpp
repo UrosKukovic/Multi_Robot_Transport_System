@@ -438,33 +438,35 @@ private:
                     if (robot == nullptr)
                         break;
 
-                    if (robot->leg == mrts::Leg::HeadingToPickup)
+                    switch (mrts::decide_success(robot->leg))
                     {
-                        set_state(id, mrts::RobotState::Loading);
-                        work_timers_[id] = create_wall_timer(std::chrono::seconds(3), [this, id](){ dropoff(id); });
-                    }
+                        case mrts::SuccessAction::StartLoading:
+                            set_state(id, mrts::RobotState::Loading);
+                            work_timers_[id] = create_wall_timer(std::chrono::seconds(3), [this, id](){ dropoff(id); });
+                            break;
+                        
+                        case mrts::SuccessAction::StartUnloading:
+                            set_state(id, mrts::RobotState::Unloading);
+                            work_timers_[id] = create_wall_timer(std::chrono::seconds(3), [this, id](){
+                                work_timers_.at(id)->cancel();
+                                auto robot = find_robot(id);
 
-                    else
-                    {
-                        set_state(id, mrts::RobotState::Unloading);
-                        work_timers_[id] = create_wall_timer(std::chrono::seconds(3), [this, id](){
-                            work_timers_.at(id)->cancel();
-                            auto robot = find_robot(id);
+                                if (robot == nullptr)
+                                {
+                                    RCLCPP_ERROR(get_logger(), "No found robots!");
+                                    return;
+                                }
 
-                            if (robot == nullptr)
-                            {
-                                RCLCPP_ERROR(get_logger(), "No found robots!");
-                                return;
-                            }
-
-                            set_state(id, mrts::RobotState::Idle);
-                            RCLCPP_INFO(get_logger(), "%s: Idle at (%.2f, %.2f)", id.c_str(), robot->pose.x, robot->pose.y);
-                            active_tasks_.erase(id);
-                            robot->leg = mrts::Leg::HeadingToPickup;
-                        });
+                                set_state(id, mrts::RobotState::Idle);
+                                RCLCPP_INFO(get_logger(), "%s: Idle at (%.2f, %.2f)", id.c_str(), robot->pose.x, robot->pose.y);
+                                active_tasks_.erase(id);
+                                robot->leg = mrts::Leg::HeadingToPickup;
+                            });
+                            break;
                     }
                     break;
                 }
+
                 case rclcpp_action::ResultCode::ABORTED:
                 {
                     auto robot = find_robot(id);
@@ -488,6 +490,7 @@ private:
 
                     break;
                 }
+
                 case rclcpp_action::ResultCode::CANCELED:
                 {
                     RCLCPP_INFO(get_logger(), "%s: CANCELED", id.c_str());
