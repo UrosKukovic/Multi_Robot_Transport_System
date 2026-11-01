@@ -85,6 +85,13 @@ namespace mrts
         }
     }
 
+    bool is_task_valid(const Pose2D& pickup, const Pose2D& dropoff)
+    {
+        // closer than this is the same spot for Nav2
+        constexpr double min_dist = 0.1;
+        return euclidean_sq(pickup, dropoff) > min_dist * min_dist;
+    }
+
     const char* to_string(mrts::RobotState s)
     {
         switch (s)
