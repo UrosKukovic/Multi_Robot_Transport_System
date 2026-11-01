@@ -115,6 +115,14 @@ namespace mrts
         return "Unknown";
     }
 
+    SuccessAction decide_success(Leg leg)
+    {
+        if (leg == Leg::HeadingToPickup)
+            return SuccessAction::StartLoading;
+
+        return SuccessAction::StartUnloading;
+    }
+
     FailureAction decide_abort(bool bad_goal, Leg leg, int current_failures, int max_failures)
     {
         if (leg == mrts::Leg::HeadingToDropoff) return FailureAction::FaultKeepTask;
