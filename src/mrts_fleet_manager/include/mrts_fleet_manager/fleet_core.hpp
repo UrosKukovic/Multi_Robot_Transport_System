@@ -59,6 +59,7 @@ namespace mrts
     std::optional<double> euclidean_cost(const Robot& r, const Pose2D& to);
     double path_length(const std::vector<Pose2D>& points);
     bool is_legal_transition(RobotState current_state, RobotState new_state);
+    bool is_task_valid(const Pose2D& pickup, const Pose2D& dropoff);
     const char* to_string(mrts::RobotState);
     FailureAction decide_abort(bool bad_goal, Leg leg, int current_failures, int max_failures);
     FailureAction decide_unfinished(Leg leg);

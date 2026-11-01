@@ -74,10 +74,8 @@ public:
             {
                 const mrts::Pose2D pickup{req->pickup_x, req->pickup_y};
                 const mrts::Pose2D dropoff{req->dropoff_x, req->dropoff_y};
-                // closer than this is the same spot for Nav2
-                constexpr double min_dist = 0.1;
 
-                if (mrts::euclidean_sq(pickup, dropoff) < min_dist * min_dist)
+                if (!mrts::is_task_valid(pickup, dropoff))
                 {
                     res->accepted = false;
                     res->message = "Pickup and dropoff are closer than 0.1 m. Pickup: (" +
