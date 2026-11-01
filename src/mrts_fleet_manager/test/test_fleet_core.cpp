@@ -256,21 +256,21 @@ TEST(DecideUnfinished, OnDropoffLegRobotFaultKeepTask)
   EXPECT_EQ(action, mrts::FailureAction::FaultKeepTask);
 }
 
-TEST(IsTaskTooClose, OnPickupDropoffCloserThanMinDistanceTaskInvalid)
+TEST(IsTaskValid, OnPickupDropoffCloserThanMinDistanceTaskInvalid)
 {
     mrts::Task task = make_task(1, 0, {10.0, 10.0}, {10.05, 10.0});
 
     EXPECT_FALSE(mrts::is_task_valid(task.pickup, task.dropoff));
 }
 
-TEST(IsTaskTooClose, OnPickupDropoffEqualToMinDistanceTaskInvalid)
+TEST(IsTaskValid, OnPickupDropoffEqualToMinDistanceTaskInvalid)
 {
     mrts::Task task = make_task(1, 0, {10.0, 10.0}, {10.1, 10.0});
 
     EXPECT_FALSE(mrts::is_task_valid(task.pickup, task.dropoff));
 }
 
-TEST(IsTaskTooClose, OnPickupDropoffBiggerThanMinDistanceTaskValid)
+TEST(IsTaskValid, OnPickupDropoffBiggerThanMinDistanceTaskValid)
 {
     mrts::Task task = make_task(1, 0, {10.0, 10.0}, {10.11, 10.0});
 
